@@ -18,7 +18,7 @@ should work as long as it has `AF_VSOCK` socket support.
 # EC2 Instance Configuration
 Now that the EC2 instance is running and you have connected to your instance, use the following steps to configure the necessary Nitro Enclave tools:
 1. Follow the steps (1-5) contained here: https://docs.aws.amazon.com/enclaves/latest/user/nitro-enclave-cli-install.html to install the Nitro Enclaves CLI.
-2. Install pip, Git and Docker to build docker images and download the application from GitHub. Add your instance user to the docker group (<USER> is your IAM instance user):
+2. Install pip, Git and Docker to build docker images and download the application from GitHub. Add your instance user to the docker group:
 ` sudo yum install python3-pip -y `
 ` sudo yum install git -y `
 ` sudo systemctl start docker && sudo systemctl enable docker `
@@ -35,8 +35,6 @@ AWS Nitro Enclaves are an isolated environment that designates a portion of the 
 ` sudo nano /etc/nitro_enclaves/allocator.yaml `
 2.	After editing the `cpu_count` value (and/or `memory_mib`), restart and enable the nitro-enclaves-allocator service to apply the changes:
 ` sudo systemctl restart nitro-enclaves-allocator.service && sudo systemctl enable nitro-enclaves-allocator.service `
-Note: The `enable` command ensures the service starts automatically on boot. The `restart` command applies your configuration changes immediately.
-
 ---
 
 0.5 Clone the repository
@@ -44,16 +42,14 @@ Note: The `enable` command ensures the service starts automatically on boot. The
 # Save the LLM in the EC2 Instance
 We are using the open-source Bloom 560m large language model (LLM) for natural language processing to generate responses. This model is not fine-tuned to PII/PHI but demonstrates how a LLM can live inside of a Nitro Enclave. The model also needs to be saved on the parent instance so that it can be copied into the enclave via the Dockerfile.
 1.	Navigate to the project:
-` cd /aws-nitro-enclaves-llm/src/enclave `
-2.	Install the necessary requirements to save the model locally:
-` pip3 install -r requirements.txt `
-3.	Run the save_model.py app to save the model within the /nitro_llm/enclave/bloom directory:
-` python3 save_model.py `
+` cd /vsock_sample/py `
+1.5 Install the necessary requirements to save the model locally:
+` pip3 install transformers torch`
+2.	Run the download_model.py app to save the model within the /vsock_sample/py/enclave/bloom directory:
+` python3 download_model.py `
 
 1. Build the Enclave Image File (EIF) starting from the `Dockerfile.server` file
-in this directory. We chose to start from the *python-alpine* Docker image to keep
-the enclave image as small as possible, but you can also use other optimized
-Docker images to further decrease the final image size.
+in this directory. 
 
 __Note__: You can use any other port number besides 5005 by modifying the command
 inside the `Dockerfile.server` file.
@@ -63,13 +59,16 @@ docker build -t vsock-sample-server -f Dockerfile.server .
 nitro-cli build-enclave --docker-uri vsock-sample-server --output-file vsock_sample_server.eif
 ```
 
-2. Configure the pool of memory and vCPUs (the `nitro-cli-config` script can be used)
-and run the enclave using the previously-built EIF.
+2. Run the enclave using the previously-built EIF.
 
 ```
-// 2 vCPUs and 256 MiB memory
-nitro-cli-config -t 2 -m 256
-nitro-cli run-enclave --eif-path vsock_sample_server.eif --cpu-count 2 --memory 256 --debug-mode
+nitro-cli run-enclave --eif-path vsock_sample_server.eif --cpu-count 8 --memory 70000 --enclave-cid 16 --debug-mode
+```
+
+2.5 Verify the enclave is running using the `nitro-cli describe-enclaves` command.
+
+```
+nitro-cli describe-enclaves
 ```
 
 3. Connect to the enclave console using `nitro-cli`.
@@ -81,7 +80,7 @@ nitro-cli console --enclave-id $ENCLAVE_ID
 4. In another terminal, run the client.
 
 ```
-python3 vsock-sample.py client $ENCLAVE_CID 5005
+python3 vsock-sample.py client 16 5005
 ```
 
 __Note__: Here `$ENCLAVE_CID` is a generated integer value (e.g. 16) of the enclave CID.

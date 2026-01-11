@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import os
 import socket
 import sys
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -96,11 +97,22 @@ class VsockListener:
 def server_handler(args):
     server = VsockListener()
     # Load model
-    print("Loading model...", flush=True)
-    server.tokenizer = AutoTokenizer.from_pretrained("enclave/bloom")
-    server.model = AutoModelForCausalLM.from_pretrained("enclave/bloom")
-    print("Model loaded.", flush=True)
+    model_path = "enclave/bloom"
+    print(f"Loading model from {model_path}...", flush=True)
+    try:
+        if not os.path.exists(model_path):
+            print(f"ERROR: Model path {model_path} does not exist!", flush=True)
+            sys.exit(1)
+        server.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        server.model = AutoModelForCausalLM.from_pretrained(model_path)
+        print("Model loaded successfully.", flush=True)
+    except Exception as e:
+        print(f"ERROR: Failed to load model: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     server.bind(args.port)
+    print(f"Server listening on port {args.port}", flush=True)
     server.recv_data()
 
 
