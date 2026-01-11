@@ -6,12 +6,49 @@ A hello-world example for Nitro Enclaves vsock server and client communication.
 
 1. The `vsock-sample` is a Nitro Enclaves application that can be run either
 as a server or a client. The client sends the “Hello, world!” message to the
-server. The server receives the message and prints it to the standard output.
+server. The server receives the message and runs a LLM model to generate a response.
 
 2. The sample is written and tested in Python 3.7.9. Any Python version
 should work as long as it has `AF_VSOCK` socket support.
 
 ## How to use the enclave as the server and the parent instance as the client
+
+0. Launch an AWS instance (r5.8xlarge with 80GB memory) and connect to it using SSH enabling the Nitro Enclaves feature.
+
+# EC2 Instance Configuration
+Now that the EC2 instance is running and you have connected to your instance, use the following steps to configure the necessary Nitro Enclave tools:
+1. Follow the steps (1-5) contained here: https://docs.aws.amazon.com/enclaves/latest/user/nitro-enclave-cli-install.html to install the Nitro Enclaves CLI.
+2. Install pip, Git and Docker to build docker images and download the application from GitHub. Add your instance user to the docker group (<USER> is your IAM instance user):
+` sudo yum install python3-pip -y `
+` sudo yum install git -y `
+` sudo systemctl start docker && sudo systemctl enable docker `
+3.	Start and enable the AWS Nitro Enclave allocator and vsock proxy services:
+` sudo systemctl start nitro-enclaves-allocator.service && sudo systemctl enable nitro-enclaves-allocator.service `
+` sudo systemctl start nitro-enclaves-vsock-proxy.service && sudo systemctl enable nitro-enclaves-vsock-proxy.service `
+AWS Nitro Enclaves use a local socket connection called vsock to create a secure channel between the parent instance and the enclave.
+4.	Once all the services are started and enabled, restart the instance to ensure all user groups and services are running correctly.
+` sudo shutdown -r now `
+
+# Nitro Enclave Allocator Service
+AWS Nitro Enclaves are an isolated environment that designates a portion of the instance CPU and memory to run the enclave. Using the Nitro Enclave allocator service, users can indicate how many CPUs and how much memory will be taken from the parent instance to run the enclave.
+1.	Modify the enclaves reserved resources using any text editor (for our solution we allocate 8 CPU and 70000 MiB memory to ensure enough resources):
+` sudo nano /etc/nitro_enclaves/allocator.yaml `
+2.	After editing the `cpu_count` value (and/or `memory_mib`), restart and enable the nitro-enclaves-allocator service to apply the changes:
+` sudo systemctl restart nitro-enclaves-allocator.service && sudo systemctl enable nitro-enclaves-allocator.service `
+Note: The `enable` command ensures the service starts automatically on boot. The `restart` command applies your configuration changes immediately.
+
+---
+
+0.5 Clone the repository
+
+# Save the LLM in the EC2 Instance
+We are using the open-source Bloom 560m large language model (LLM) for natural language processing to generate responses. This model is not fine-tuned to PII/PHI but demonstrates how a LLM can live inside of a Nitro Enclave. The model also needs to be saved on the parent instance so that it can be copied into the enclave via the Dockerfile.
+1.	Navigate to the project:
+` cd /aws-nitro-enclaves-llm/src/enclave `
+2.	Install the necessary requirements to save the model locally:
+` pip3 install -r requirements.txt `
+3.	Run the save_model.py app to save the model within the /nitro_llm/enclave/bloom directory:
+` python3 save_model.py `
 
 1. Build the Enclave Image File (EIF) starting from the `Dockerfile.server` file
 in this directory. We chose to start from the *python-alpine* Docker image to keep

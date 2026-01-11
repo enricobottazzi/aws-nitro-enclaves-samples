@@ -6,6 +6,7 @@
 import argparse
 import socket
 import sys
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
 class VsockStream:
@@ -22,6 +23,7 @@ class VsockStream:
     def send_data(self, data):
         """Send data to a remote endpoint"""
         self.sock.sendall(data)
+        self.sock.shutdown(socket.SHUT_WR)
 
     def recv_data(self):
         """Receive data from a remote endpoint"""
@@ -41,8 +43,9 @@ def client_handler(args):
     client = VsockStream()
     endpoint = (args.cid, args.port)
     client.connect(endpoint)
-    msg = 'Hello, world!'
+    msg = args.prompt if hasattr(args, 'prompt') else 'Hello, world!'
     client.send_data(msg.encode())
+    client.recv_data()
     client.disconnect()
 
 
@@ -50,6 +53,8 @@ class VsockListener:
     """Server"""
     def __init__(self, conn_backlog=128):
         self.conn_backlog = conn_backlog
+        self.model = None
+        self.tokenizer = None
 
     def bind(self, port):
         """Bind and listen for connections on the specified port"""
@@ -61,16 +66,23 @@ class VsockListener:
         """Receive data from a remote endpoint"""
         while True:
             (from_client, (remote_cid, remote_port)) = self.sock.accept()
-            # Read 1024 bytes at a time
-            while True:
-                try:
+            # Read all data
+            prompt = ""
+            try:
+                while True:
                     data = from_client.recv(1024).decode()
-                except socket.error:
-                    break
-                if not data:
-                    break
-                print(data, end='', flush=True)
-            print()
+                    if not data:
+                        break
+                    prompt += data
+            except socket.error:
+                pass
+            
+            if prompt and self.model and self.tokenizer:
+                # Generate response
+                inputs = self.tokenizer(prompt, return_tensors="pt")
+                outputs = self.model.generate(**inputs, max_length=100)
+                response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                from_client.sendall(response.encode())
             from_client.close()
 
     def send_data(self, data):
@@ -83,6 +95,11 @@ class VsockListener:
 
 def server_handler(args):
     server = VsockListener()
+    # Load model
+    print("Loading model...", flush=True)
+    server.tokenizer = AutoTokenizer.from_pretrained("enclave/bloom")
+    server.model = AutoModelForCausalLM.from_pretrained("enclave/bloom")
+    print("Model loaded.", flush=True)
     server.bind(args.port)
     server.recv_data()
 
@@ -98,6 +115,7 @@ def main():
                                           help="Connect to a given cid and port.")
     client_parser.add_argument("cid", type=int, help="The remote endpoint CID.")
     client_parser.add_argument("port", type=int, help="The remote endpoint port.")
+    client_parser.add_argument("--prompt", type=str, help="Prompt to send to the LLM.")
     client_parser.set_defaults(func=client_handler)
 
     server_parser = subparsers.add_parser("server", description="Server",

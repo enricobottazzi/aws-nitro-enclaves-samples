@@ -3,6 +3,9 @@
 
 FROM python:3.7.9-alpine3.12
 
+RUN pip install transformers torch
+
 COPY vsock-sample.py .
+COPY enclave/ ./enclave/
 
 CMD ["/usr/local/bin/python3", "vsock-sample.py", "server", "5005"]
